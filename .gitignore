@@ -5,10 +5,14 @@ dist/
 *.log
 .DS_Store
 data/
-clips/*.mp3
-clips/*.ogg
-clips/*.wav
-clips/*.opus
+
+# Audio clips are never committed — operator extracts locally.
+# Patterns are recursive so subfolder categorization works (clips/bye/*.mp3).
+*.mp3
+*.ogg
+*.opus
+*.wav
+*.m4a
 !clips/.gitkeep
 !clips/README.md
 !clips/manifest.example.json
