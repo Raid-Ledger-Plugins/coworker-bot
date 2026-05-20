@@ -14,8 +14,8 @@ import { VoiceBasedChannel } from 'discord.js';
 import { DiscordClientService } from '../bot/discord-client.service.js';
 import { CoworkerConfigService } from '../config/coworker.config.js';
 import { ClipLoaderService, Clip } from '../clips/clip-loader.service.js';
+import { ListenerService } from '../listener/listener.service.js';
 import { StateStoreService } from '../state/state-store.service.js';
-import { VoiceActivityService } from '../voice-activity/voice-activity.service.js';
 
 interface VisitResult {
   ok: boolean;
@@ -24,7 +24,6 @@ interface VisitResult {
   durationMs: number;
 }
 
-const ACTIVITY_SAMPLE_MS = 4_000;
 const CONNECTION_READY_TIMEOUT_MS = 15_000;
 
 @Injectable()
@@ -37,7 +36,7 @@ export class VisitOrchestratorService {
     private readonly cfg: CoworkerConfigService,
     private readonly clips: ClipLoaderService,
     private readonly state: StateStoreService,
-    private readonly activity: VoiceActivityService,
+    private readonly listener: ListenerService,
   ) {}
 
   isBusy(): boolean {
@@ -53,8 +52,18 @@ export class VisitOrchestratorService {
     }
     this.busy = true;
     const started = Date.now();
-    let clipsPlayed = 0;
+    const result = await this.runVisit(channel, started);
+    this.recordOutcome(channel, started, result.clipsPlayed);
+    this.busy = false;
+    return result;
+  }
+
+  private async runVisit(
+    channel: VoiceBasedChannel,
+    started: number,
+  ): Promise<VisitResult> {
     let connection: VoiceConnection | null = null;
+    let clipsPlayed = 0;
     try {
       connection = this.openConnection(channel);
       await entersState(
@@ -62,18 +71,9 @@ export class VisitOrchestratorService {
         VoiceConnectionStatus.Ready,
         CONNECTION_READY_TIMEOUT_MS,
       );
-      await this.awkwardSilence();
-      const aborted = await this.maybeAbortForActivity(connection);
-      if (aborted) {
-        return {
-          ok: false,
-          reason: 'conversation-active',
-          clipsPlayed: 0,
-          durationMs: Date.now() - started,
-        };
-      }
-      clipsPlayed = await this.playSequence(connection);
-      await this.linger();
+      const category = await this.decideCategory(connection);
+      clipsPlayed = await this.playSequence(connection, category);
+      await sleep(this.cfg.config.lingerAfterMs);
       return { ok: true, clipsPlayed, durationMs: Date.now() - started };
     } catch (err) {
       this.logger.warn(`visit failed: ${String(err)}`);
@@ -89,19 +89,25 @@ export class VisitOrchestratorService {
       } catch {
         /* ignore */
       }
-      const duration = Date.now() - started;
-      this.state.recordVisit({
-        guild_id: channel.guild.id,
-        channel_id: channel.id,
-        visited_at: started,
-        duration_ms: duration,
-        clips_played: clipsPlayed,
-      });
-      this.busy = false;
-      this.logger.log(
-        `visit complete: ${channel.guild.name}#${channel.name} clips=${clipsPlayed} duration=${duration}ms`,
-      );
     }
+  }
+
+  private recordOutcome(
+    channel: VoiceBasedChannel,
+    started: number,
+    clipsPlayed: number,
+  ): void {
+    const duration = Date.now() - started;
+    this.state.recordVisit({
+      guild_id: channel.guild.id,
+      channel_id: channel.id,
+      visited_at: started,
+      duration_ms: duration,
+      clips_played: clipsPlayed,
+    });
+    this.logger.log(
+      `visit complete: ${channel.guild.name}#${channel.name} clips=${clipsPlayed} duration=${duration}ms`,
+    );
   }
 
   private openConnection(channel: VoiceBasedChannel): VoiceConnection {
@@ -115,35 +121,25 @@ export class VisitOrchestratorService {
     });
   }
 
-  private async awkwardSilence(): Promise<void> {
-    const base = this.cfg.config.awkwardSilenceMs;
-    const jitter = base * 0.5;
-    const ms = base + (Math.random() * 2 - 1) * jitter;
-    await sleep(Math.max(0, ms));
-  }
-
-  private async linger(): Promise<void> {
-    await sleep(this.cfg.config.lingerAfterMs);
-  }
-
-  private async maybeAbortForActivity(connection: VoiceConnection): Promise<boolean> {
-    if (!this.cfg.config.respectActiveConversation) return false;
+  private async decideCategory(
+    connection: VoiceConnection,
+  ): Promise<string | undefined> {
     const botId = this.bot.client.user?.id;
-    if (!botId) return false;
-    const sample = await this.activity.sample(connection, botId, ACTIVITY_SAMPLE_MS);
-    if (sample.speakers >= 1) {
-      this.logger.log(
-        `aborting visit: ${sample.speakers} active speakers in ${sample.sampledMs}ms`,
-      );
-      return true;
-    }
-    return false;
+    if (!botId) return undefined;
+    const result = await this.listener.listenAndPick(connection, botId);
+    this.logger.log(
+      `category decision: ${result.reason} ${result.category ? '-> ' + result.category : ''}`,
+    );
+    return result.category ?? undefined;
   }
 
-  private async playSequence(connection: VoiceConnection): Promise<number> {
+  private async playSequence(
+    connection: VoiceConnection,
+    category: string | undefined,
+  ): Promise<number> {
     const cfg = this.cfg.config;
     const count = pickClipCount(cfg.clipsPerVisitMin, cfg.clipsPerVisitMax);
-    const picks = this.clips.pickSequence(count);
+    const picks = this.clips.pickSequence(count, category);
     let played = 0;
     for (const clip of picks) {
       const ok = await this.playOne(connection, clip);
