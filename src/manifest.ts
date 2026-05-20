@@ -34,7 +34,7 @@ export const COWORKER_MANIFEST: PluginManifest = {
   version: '0.1.0',
   description:
     'Ambient Discord presence — drifts into voice channels and mutters lines from The Coworker (Abiotic Factor).',
-  author: { name: 'gamernight' },
+  author: { name: 'Raid-Ledger-Plugins' },
   capabilities: ['ambient-discord-presence'],
   settingKeys: [
     'coworker_bot_token',
