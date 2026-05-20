@@ -1,58 +1,63 @@
 # Clips folder
 
-Drop audio files here. The loader scans this folder recursively on bot startup
-(and on `/coworker reload-clips`) and picks files randomly at visit time.
+The bot ships with a starter set of 45 clips, organized by category:
+
+```
+clips/
+  bye/             12 farewell lines
+  hungry_larvae/    1 line referencing larvae
+  idle/            12 ambient mutterings
+  idle_hungry/      4 idle + hunger lines
+  ty/              13 thank-you lines
+  ty_stapler/       3 office / "thanks for the stapler" type lines
+```
+
+The loader scans this folder recursively on bot startup (and on
+`/coworker reload-clips`). Files at the root of `clips/` get the category
+`uncategorized`; anything under a subfolder gets that folder's lowercase
+name as its category. The keyword tree in
+`src/listener/clip-selector.service.ts` uses these category names directly,
+so renaming a subfolder also requires updating the rule that points at it.
 
 ## Supported formats
 
 `.mp3`, `.ogg`, `.opus`, `.wav`, `.m4a`
 
-FFmpeg (bundled via `ffmpeg-static`) handles transcoding to Opus for Discord's
-voice gateway, so any of those should work without conversion.
+FFmpeg handles transcoding to Opus for Discord's voice gateway, so any of
+those should work without conversion.
 
-## Categories (optional, via subfolders)
+## How the bundled clips were made
 
-Files at the root of `clips/` get the category `uncategorized`. Anything under
-a subfolder gets that folder's lowercase name as its category. Example:
+Source: <https://www.youtube.com/watch?v=nTe8fy4sadg> — a public fan
+compilation by *CloseDatMouf*. The video has YouTube chapters tagging the
+in-game category for each segment (`bye`, `idle`, `ty`, etc.), which we used
+directly as subfolder names.
 
-```
-clips/
-  greeting/
-    hi_there.mp3
-    oh_youre_back.mp3
-  mundane/
-    coffee_machine_broken.mp3
-    have_you_seen_my_stapler.mp3
-  creepy/
-    silence_then_breathing.mp3
-    i_can_hear_you.mp3
-  farewell/
-    well_back_to_work.mp3
-```
+Extraction pipeline (one-off, not committed):
 
-The current picker just randomizes across all clips. A future weighted picker
-can use the category — e.g. lean on `greeting/` near the start of a visit and
-`farewell/` at the end. Hook is in `clip-loader.service.ts::pickRandomFromCategory`.
+1. `yt-dlp -x --audio-format mp3 --audio-quality 0 <url>` → full 1:47 source
+2. ffmpeg per-chapter slice using the YouTube chapter timestamps
+3. ffmpeg `silencedetect=noise=-25dB:d=0.25` to find utterance boundaries
+   inside each chapter
+4. ffmpeg re-encode each utterance to mp3, pad ±50ms to avoid clipped
+   consonants
+5. Post-process: prune clips <0.5s (mid-word chops, artifacts) and re-split
+   any clip >6s with aggressive silence detection
 
-## Getting source clips
+Final distribution: 0.5–5.8s per clip, average ~2s.
 
-Abiotic Factor is an Unreal Engine 5 game, so the cleanest extraction is:
+## Adding your own clips
 
-1. Install **FModel** ([fmodel.app](https://fmodel.app)).
-2. Point it at `Steam/steamapps/common/Abiotic Factor/AbioticFactor/Content/Paks/`.
-3. Find the Coworker's voice bank under `Content/.../Audio/` or `Content/.../VO/`
-   (Unreal naming varies — search the asset tree for "Coworker" or known lines).
-4. Export the `.uasset`/`.uexp` audio entries as `.ogg`.
+Drop new audio files into the appropriate category folder. Run
+`/coworker reload-clips` in Discord to re-scan without restarting the bot.
 
-Or grab them from a fan soundboard (e.g. 101soundboards or Steam community
-guides) if someone's already done the extraction. Quality varies.
+Suggested filename format: `<category>_NNN.mp3` (matches the existing
+bundled clips) or `<short-description>.mp3`. The bot logs
+`category/filename` on every play, so descriptive names make the log
+readable.
 
-**Copyright reminder:** these are game audio assets owned by the game's publisher.
-Fine for private use among friends; do not redistribute the bot publicly with
-clips bundled in.
+## A note on copyright
 
-## Naming convention
-
-The bot logs `category/filename.mp3` on every play, so descriptive names make
-the log readable. Suggested format: `<short-description>.mp3`, lowercase,
-hyphen-separated. Example: `well-back-to-work.mp3` rather than `clip_47.mp3`.
+The clips are derivative work of *Abiotic Factor* (game audio © Deep Field
+Games / Playstack). Bundled here for use with this bot only. If a rights
+holder objects, file an issue and the clips will be removed.

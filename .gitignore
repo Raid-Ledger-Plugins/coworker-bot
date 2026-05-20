@@ -7,13 +7,6 @@ dist/
 data/
 models/
 
-# Audio clips are never committed — operator extracts locally.
-# Patterns are recursive so subfolder categorization works (clips/bye/*.mp3).
-*.mp3
-*.ogg
-*.opus
-*.wav
-*.m4a
-!clips/.gitkeep
-!clips/README.md
-!clips/manifest.example.json
+# The unsliced source download is too large to ship; only the trimmed
+# per-utterance clips under clips/<category>/ are committed.
+clips/_source.*
