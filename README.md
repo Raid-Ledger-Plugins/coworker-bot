@@ -1,197 +1,264 @@
 # coworker-bot
 
-Discord bot that drifts into voice channels every so often, mutters a line or
-three in the voice of The Coworker (Abiotic Factor), and quietly disconnects.
+A small Discord bot that drifts into voice channels every so often, mutters
+a line or two as **The Coworker** (from [*Abiotic Factor*](https://store.steampowered.com/app/427920/Abiotic_Factor/)),
+and quietly disconnects.
 
-Built as a NestJS module so that — should you ever want to — it can be lifted
-into Raid Ledger's plugin host as a `ambient-discord-presence` capability
-without restructuring. See `src/manifest.ts`.
+It listens to what's actually being said and tries to respond appropriately —
+say *"thanks for the coffee"* in voice chat and the bot might pop in, play a
+"you're welcome" line, and drift off.
 
-## How it behaves
+> Built for laughs in a friend-group server. Not affiliated with the game,
+> its publisher, or the voice actor.
 
-Every `TICK_INTERVAL_MS` (default 2 min) the scheduler:
+## What it actually does
 
-1. Checks quiet hours, global cooldown, and whether a visit is already in
-   progress — bail early if any apply.
-2. Walks every voice channel in every enabled server, filters out
-   muted/opted-out channels and channels that don't meet `MIN_OCCUPANTS`.
-3. Rolls a `VISIT_PROBABILITY` die. Most ticks do nothing.
-4. If the roll wins, joins the chosen channel, **listens** for ~7s,
-   transcribes the audio with local whisper.cpp, picks a clip category from
-   the transcript via a small keyword tree, plays 1–3 clips, lingers, and
-   disconnects.
+Every couple of minutes the bot rolls a probability die. About 3% of the time,
+**if** a voice channel in a server it's been enabled in has at least 2 humans
+in it, it:
 
-Cooldowns are recorded in sqlite so behavior survives restarts.
+1. Joins the channel
+2. Records ~7 seconds of mixed audio
+3. Transcribes the audio with local [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+4. Matches the transcript against a small keyword tree to pick a clip
+   category
+5. Plays 1–3 clips with short pauses between them
+6. Lingers briefly, then disconnects
 
-## Listening (contextual responses)
+It won't revisit the same channel more than once every 6 hours, won't visit
+at all during configurable quiet hours, and any admin can mute it per-channel
+or per-server with a slash command.
 
-After joining, the bot records ~7s of mixed channel audio, runs it through
-local whisper.cpp (`tiny.en` model), and matches the transcript against a
-keyword tree to pick a clip category:
+All transcription runs **locally** — no voice data ever leaves the host.
 
-| If transcript contains...                       | Bot plays a clip from... |
-| ----------------------------------------------- | ------------------------ |
-| `stapler` / `office` / `meeting` / `coffee`     | `ty_stapler/`            |
-| `thank` / `thanks` / `appreciate`               | `ty/`                    |
-| `bye` / `goodbye` / `see ya` / `gtg` / `later`  | `bye/`                   |
-| `hungry` / `starving` / `lunch` / `dinner`      | `idle_hungry/`           |
-| `food` / `snack` / `larvae`                     | `hungry_larvae/`         |
-| (silent or no match)                            | `idle/`                  |
+### The keyword tree
 
-`RANDOM_CLIP_PROBABILITY` (default 0.3) is the chance the keyword tree is
-overridden with a fully-random pick — keeps the bot from feeling robotic when
-the same word triggers the same category repeatedly. Set `LISTEN_ENABLED=false`
-in `.env` to skip listening entirely (every visit becomes a random clip).
+| Heard...                                        | Plays a clip from... |
+| ----------------------------------------------- | -------------------- |
+| `stapler` / `office` / `meeting` / `coffee`     | `ty_stapler/`        |
+| `thank` / `thanks` / `appreciate`               | `ty/`                |
+| `bye` / `goodbye` / `see ya` / `gtg` / `later`  | `bye/`               |
+| `hungry` / `starving` / `lunch` / `dinner`      | `idle_hungry/`       |
+| `food` / `snack` / `larvae`                     | `hungry_larvae/`     |
+| (silent channel or no keyword matched)          | `idle/`              |
 
-Audio is processed locally — no voice data leaves the host. The tree itself
-lives at `src/listener/clip-selector.service.ts`; add new keyword rules there.
+About 30% of the time the keyword match is ignored and a random clip plays
+anyway, so the same word doesn't always produce the same response.
 
-## Setup
+## Run it yourself
 
-### 1. Create the Discord bot
+### What you need
 
-This bot is **separate from any other bot you run** — use a new application.
+- A Discord application + bot user of your own (5-minute walkthrough below)
+- Node.js 20+ and npm
+- `ffmpeg` — `brew install ffmpeg` on macOS, `apt install ffmpeg` on Debian
+- `whisper.cpp` — `brew install whisper-cpp` on macOS (the Docker path
+  builds it from source for you)
 
-1. Go to <https://discord.com/developers/applications> → New Application →
-   name it "The Coworker" (or whatever).
-2. **Bot** tab → Add Bot → copy the token.
-3. Toggle **Server Members Intent** ON (so the bot can see voice channel
-   occupants). The bot doesn't need Message Content Intent.
-4. **OAuth2 → URL Generator** → check `bot` + `applications.commands` scopes.
-   Bot permissions: `View Channels`, `Connect`, `Speak`, `Use Voice Activity`.
-   Open the generated URL, add to your server.
-
-### 2. Configure
+### Quick start
 
 ```bash
-cp .env.example .env
-# Fill in DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, ALLOWED_GUILD_IDS.
-```
-
-### 3. Install deps
-
-```bash
+git clone https://github.com/Raid-Ledger-Plugins/coworker-bot.git
+cd coworker-bot
 npm install
+npm run setup-whisper           # downloads the ggml-tiny.en model (~75MB)
+
+cp .env.example .env
+# Fill in DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, and ALLOWED_GUILD_IDS
+
+npm run register-commands       # registers /coworker slash commands
+npm run start:dev               # runs in the foreground, auto-restarts on changes
 ```
 
-If `@discordjs/opus` fails to build (it sometimes does on macOS without Xcode
-command-line tools), the bot will fall back to `opusscript` automatically.
-Install `opusscript` explicitly if needed: `npm i opusscript`.
+Then in Discord, run `/coworker enable` (requires the Manage Server
+permission). The bot won't visit anything until at least one server runs
+that command.
 
-### 4. Drop in some clips
+To test immediately without waiting for the probability roll, run
+`/coworker visit channel:#some-voice-channel`.
 
-Put .mp3/.ogg/.opus/.wav files in `clips/`. See `clips/README.md` for the
-extraction walkthrough.
+### Creating the Discord bot user
 
-### 5. Set up whisper.cpp (for contextual responses)
+This bot needs its **own** Discord application — don't reuse a token from
+another bot you run.
+
+1. Visit <https://discord.com/developers/applications> → **New Application**
+   → name it whatever
+2. **Bot** tab → **Reset Token** → copy it. That goes into `.env` as
+   `DISCORD_BOT_TOKEN`. Discord only shows the token once.
+3. On the same tab, toggle **Server Members Intent** ON. (Lets the bot see
+   who's in voice channels. It does *not* need Message Content Intent.)
+4. **General Information** tab → copy the **Application ID** into `.env`
+   as `DISCORD_CLIENT_ID`
+5. **OAuth2 → URL Generator** → check the `bot` and `applications.commands`
+   scopes, then under *Bot Permissions* check `View Channels`, `Connect`,
+   `Speak`, and `Use Voice Activity`. Open the generated URL in a browser
+   and add the bot to your server.
+
+### Finding your server ID
+
+In Discord, **Settings → Advanced → Developer Mode** (toggle on). Then
+right-click your server icon → **Copy Server ID**. Paste that value into
+`.env` as `ALLOWED_GUILD_IDS`. (If you leave that blank, the bot can be
+added to any server, and slash commands take up to an hour to propagate
+globally instead of registering instantly per-guild.)
+
+## Deploy (run always-on)
+
+`npm run start:dev` is great for trying it out, but it stops the moment you
+close your terminal. Two options to keep it running.
+
+### Docker (recommended)
+
+The included `Dockerfile` builds whisper.cpp from source, pre-downloads the
+model, and produces a self-contained image. The included `docker-compose.yml`
+wires up restart-on-failure and a persistent volume for the sqlite DB.
 
 ```bash
-brew install whisper-cpp
-npm run setup-whisper        # downloads ggml-tiny.en (~75MB) into ./models/
+# Fill in your .env first (same as the quick-start step above)
+cp .env.example .env
+# Edit .env with your Discord credentials
+
+# Build and start
+docker compose up -d --build
+
+# Watch the logs
+docker compose logs -f
+
+# Update later
+git pull && docker compose up -d --build
+
+# Stop
+docker compose down
 ```
 
-Skip this step if you set `LISTEN_ENABLED=false` — the bot still works, it
-just plays random clips with no listening.
+The bot only makes **outbound** connections to Discord's gateway — no ports
+need to be exposed. The `./data/` directory on the host is mounted into the
+container so the cooldown / opt-out database survives restarts.
 
-### 6. Register slash commands
+This deploys cleanly to a Synology NAS, a small VPS, or any other Docker
+host.
+
+### macOS launchd (always-on on your Mac)
+
+If you'd rather run it on your Mac in the background and have it auto-start
+on login:
 
 ```bash
-npm run register-commands
+# Build the production bundle first
+npm run build
+
+# Copy the template and edit the four REPLACE_ME paths in it
+cp scripts/com.coworker-bot.plist.template ~/Library/LaunchAgents/com.coworker-bot.plist
+open -e ~/Library/LaunchAgents/com.coworker-bot.plist
 ```
 
-If `ALLOWED_GUILD_IDS` is set, commands register per-guild (instant). If empty,
-they register globally (takes up to an hour to propagate).
-
-### 7. Run
+You'll need to substitute the absolute path to this repo (run `pwd` from
+inside the repo) and the absolute path to your `node` binary (run
+`which node` — typically `/opt/homebrew/bin/node` on Apple Silicon).
 
 ```bash
-# dev mode (auto-restart on file changes)
-npm run start:dev
+# Load it
+launchctl load -w ~/Library/LaunchAgents/com.coworker-bot.plist
 
-# prod mode
-npm run build && npm start
+# Tail the logs
+tail -f data/launchd.stdout.log data/launchd.stderr.log
+
+# Stop and unload
+launchctl unload ~/Library/LaunchAgents/com.coworker-bot.plist
 ```
-
-### 8. Enable the bot in your server
-
-In Discord, run `/coworker enable` (requires Manage Server permission). The
-bot won't visit anything until at least one server enables it.
 
 ## Slash commands
 
 | Command | What it does |
-|---------|-------------|
-| `/coworker enable` | Allow the bot to visit voice channels in this server. |
-| `/coworker disable` | Stop all ambient visits in this server. |
-| `/coworker visit channel:#voice` | Force a visit now (admin override). |
-| `/coworker stats` | Total visits, last 24h, last visit time, clips loaded. |
-| `/coworker mute-channel channel:#voice` | Exclude a channel from ambient visits. |
-| `/coworker unmute-channel channel:#voice` | Allow the channel again. |
-| `/coworker reload-clips` | Re-scan `clips/` without a restart. |
+|---------|--------------|
+| `/coworker enable` | Allow the bot to visit voice channels in this server |
+| `/coworker disable` | Stop all ambient visits in this server |
+| `/coworker visit channel:#voice` | Force a visit now — useful for testing |
+| `/coworker stats` | Total visits, last 24h, last visit time, clips loaded |
+| `/coworker mute-channel channel:#voice` | Skip a specific voice channel forever |
+| `/coworker unmute-channel channel:#voice` | Reverse the above |
+| `/coworker reload-clips` | Re-scan `clips/` without restarting the bot |
 
-All commands require **Manage Server** except `/coworker stats` which anyone
-can run.
+All commands require Manage Server permission, except `/coworker stats`
+which anyone can run.
 
-## Tuning behavior
+## Tuning
 
-Every knob lives in `.env`. Important ones:
+Every behavior knob is an environment variable in `.env`. Open
+[`.env.example`](.env.example) for the full list, all with comments. The
+ones you're most likely to touch:
 
-- `VISIT_PROBABILITY=0.03` — at 2-min tick, ~3% × 30 ticks/hour ≈ one attempt
-  per 1.1h *if* a target exists. Combined with `GLOBAL_COOLDOWN_MIN=90` you
-  get roughly one visit every 90–120 min in active servers.
-- `GLOBAL_COOLDOWN_MIN=90` — minimum minutes between any two visits.
-- `CHANNEL_COOLDOWN_MIN=360` — minimum minutes between visits to the same
-  channel.
-- `QUIET_HOURS_START=03` / `QUIET_HOURS_END=10` — local hours (0–23) during
-  which the bot will not visit. Set both to the same number to disable.
-- `RESPECT_ACTIVE_CONVERSATION=true` — bot aborts after a 4s sample if anyone
-  is actively talking. Flip to `false` for chaotic-evil mode.
+- `VISIT_PROBABILITY` — chance of attempting a visit on any tick (default `0.03`)
+- `GLOBAL_COOLDOWN_MIN` / `CHANNEL_COOLDOWN_MIN` — minimum minutes between visits
+- `QUIET_HOURS_START` / `QUIET_HOURS_END` — hours during which the bot won't visit
+- `LISTEN_ENABLED` — set to `false` to skip transcription (every visit becomes random)
+- `RANDOM_CLIP_PROBABILITY` — chance to override the keyword match with a random pick
+
+## Extending the keyword tree
+
+The whole tree lives in
+[`src/listener/clip-selector.service.ts`](src/listener/clip-selector.service.ts).
+Each rule is a list of keywords mapped to a category, which is the name of
+a subfolder under `clips/`. Order matters — more-specific rules go first
+(so *"thanks for the stapler"* picks `ty_stapler/`, not `ty/`).
+
+To add a new category:
+
+1. Create `clips/<your-category>/` and drop your audio files in
+2. Add a rule pointing at that category in `clip-selector.service.ts`
+3. Restart the bot, or run `/coworker reload-clips`
 
 ## Architecture
 
 ```
 src/
-├── manifest.ts                       PluginManifest (RL plugin-host compatible)
-├── main.ts                           Standalone bootstrap
-├── app.module.ts                     Root NestJS module
-├── config/coworker.config.ts         Env → typed config
-├── bot/discord-client.service.ts     discord.js Client lifecycle
-├── state/state-store.service.ts      better-sqlite3 — visits, opt-outs, enabled guilds
-├── clips/clip-loader.service.ts      Scans clips/ folder, random picker
-├── voice-activity/...                VoiceReceiver-based "are humans talking?" sampler
-├── visit/visit-orchestrator.service  join → silence → play → linger → leave
-├── scheduler/visit-eligibility       cooldowns, quiet hours, occupancy rules
-├── scheduler/scheduler.service       periodic tick + probability gate
-├── commands/coworker.commands.ts     /coworker slash-command handlers
-└── scripts/register-commands.ts      Slash-command registration script
+├── manifest.ts                              Plugin manifest (see footer)
+├── main.ts                                  Standalone bootstrap
+├── app.module.ts                            Root NestJS module
+├── config/coworker.config.ts                Env → typed config
+├── bot/discord-client.service.ts            discord.js Client lifecycle
+├── state/state-store.service.ts             better-sqlite3: visits, opt-outs
+├── clips/clip-loader.service.ts             Scans clips/, category-aware picker
+├── listener/
+│   ├── audio-recorder.service.ts            VoiceReceiver → ffmpeg → WAV
+│   ├── transcriber.service.ts               whisper-cli subprocess
+│   ├── clip-selector.service.ts             Keyword tree → category
+│   └── listener.service.ts                  Orchestrator + random override
+├── visit/visit-orchestrator.service.ts      Join → listen → play → linger → leave
+├── scheduler/scheduler.service.ts           Periodic tick + probability gate
+├── scheduler/visit-eligibility.service.ts   Cooldowns, quiet hours, occupancy
+└── commands/coworker.commands.ts            /coworker slash-command handlers
 ```
 
-## Folding into Raid Ledger later
+## Further reading
 
-If you eventually want this to live inside Raid Ledger as a plugin:
+- [`docs/raid-ledger-integration.md`](docs/raid-ledger-integration.md) —
+  how to lift this code into Raid Ledger's plugin host
+- [`docs/design-notes.md`](docs/design-notes.md) — calibration math,
+  known limitations, possible future directions
+- [`clips/README.md`](clips/README.md) — how the bundled clips were made
+  and how to add your own
 
-1. `cp -r src api/src/plugins/coworker-bot/` (excluding `main.ts` and
-   `scripts/`).
-2. Register `AppModule`'s imports list in RL's `api/src/app.module.ts`.
-3. Add `COWORKER_MANIFEST` to RL's plugin registry. The manifest shape already
-   matches `PluginManifest` in
-   `api/src/plugins/plugin-host/plugin-manifest.interface.ts`.
-4. Replace `process.env` reads in `coworker.config.ts` with reads from RL's
-   settings service (the `settingKeys` are already declared in the manifest).
-5. Keep the bot token separate from RL's main bot — instantiate its own
-   `Client`. Don't share `DiscordBotClient`.
+## Credits
 
-## Known limitations / future work
+- Voice clips extracted from this great fan compilation:
+  ["Abiotic Factor — Coworker Voice Lines"](https://www.youtube.com/watch?v=nTe8fy4sadg)
+  by CloseDatMouf
+- Original game audio © **Deep Field Games / Playstack**.
+  *Abiotic Factor* is on [Steam](https://store.steampowered.com/app/427920/Abiotic_Factor/)
+- Transcription: [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+- Discord library: [discord.js](https://discord.js.org) +
+  [@discordjs/voice](https://github.com/discordjs/voice)
 
-- **Recording the reactions you join** was scoped out by design — adds
-  consent/Discord-TOS overhead the friend-group scope doesn't need yet.
-  If you change your mind, the receiver plumbing in
-  `voice-activity.service.ts` already subscribes to per-user audio streams;
-  decoding to WAV is a `prism-media` `OpusDecoder` + `fs.createWriteStream`
-  away.
-- **Weighted clip categories** — the picker treats all clips equally. Hooks
-  exist in `clip-loader.service.ts` for category-aware picks; tag-based
-  pacing (greeting → mundane → creepy → farewell) is left as future work.
-- **Multi-bot conflict** — if your main bot also wants to be in the same
-  channel as the Coworker, both will work, but Discord's voice gateway will
-  show two bots in the channel. That's the point of separate bot identities.
+If you're a rights-holder and want any of the bundled clips removed, please
+open an issue.
+
+---
+
+<sub>This repo lives under the [Raid-Ledger-Plugins](https://github.com/Raid-Ledger-Plugins)
+org because the plugin manifest in <code>src/manifest.ts</code> follows
+[Raid Ledger](https://github.com/sjdodge123/Raid-Ledger)'s plugin-host
+interface shape. The maintainer of that project may eventually fold this
+bot in as an extension; for everyone else, it's just a standalone Discord
+bot with no Raid Ledger dependency at runtime.</sub>
