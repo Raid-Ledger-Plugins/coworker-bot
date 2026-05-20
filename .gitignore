@@ -5,6 +5,7 @@ dist/
 *.log
 .DS_Store
 data/
+models/
 
 # Audio clips are never committed — operator extracts locally.
 # Patterns are recursive so subfolder categorization works (clips/bye/*.mp3).

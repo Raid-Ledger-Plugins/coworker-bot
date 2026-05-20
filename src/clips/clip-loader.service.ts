@@ -89,10 +89,23 @@ export class ClipLoaderService implements OnModuleInit {
     return filtered[Math.floor(Math.random() * filtered.length)];
   }
 
-  pickSequence(count: number): Clip[] {
+  /**
+   * Picks up to `count` distinct clips. When `preferredCategory` is set, the
+   * first pick comes from that category (if any clips exist there) and the
+   * remainder are random across all categories — so the bot opens with a
+   * context-matched line and drifts after.
+   */
+  pickSequence(count: number, preferredCategory?: string): Clip[] {
     if (this.clips.length === 0) return [];
     const picks: Clip[] = [];
     const seen = new Set<string>();
+    if (preferredCategory) {
+      const first = this.pickRandomFromCategory(preferredCategory);
+      if (first) {
+        picks.push(first);
+        seen.add(first.filePath);
+      }
+    }
     let safety = count * 4;
     while (picks.length < count && safety-- > 0) {
       const next = this.pickRandom();

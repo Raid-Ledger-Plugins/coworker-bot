@@ -10,14 +10,17 @@ export interface CoworkerConfig {
   minOccupants: number;
   globalCooldownMin: number;
   channelCooldownMin: number;
-  awkwardSilenceMs: number;
   clipsPerVisitMin: number;
   clipsPerVisitMax: number;
   pauseBetweenClipsMs: number;
   lingerAfterMs: number;
   quietHoursStart: number;
   quietHoursEnd: number;
-  respectActiveConversation: boolean;
+  listenEnabled: boolean;
+  listenDurationMs: number;
+  randomClipProbability: number;
+  whisperBinPath: string;
+  whisperModelPath: string;
   clipsDir: string;
   dataDir: string;
 }
@@ -58,14 +61,19 @@ export class CoworkerConfigService {
       minOccupants: readNum('MIN_OCCUPANTS', 2),
       globalCooldownMin: readNum('GLOBAL_COOLDOWN_MIN', 90),
       channelCooldownMin: readNum('CHANNEL_COOLDOWN_MIN', 360),
-      awkwardSilenceMs: readNum('AWKWARD_SILENCE_MS', 12_000),
       clipsPerVisitMin: readNum('CLIPS_PER_VISIT_MIN', 1),
       clipsPerVisitMax: readNum('CLIPS_PER_VISIT_MAX', 3),
       pauseBetweenClipsMs: readNum('PAUSE_BETWEEN_CLIPS_MS', 4_000),
       lingerAfterMs: readNum('LINGER_AFTER_MS', 15_000),
       quietHoursStart: readNum('QUIET_HOURS_START', 3),
       quietHoursEnd: readNum('QUIET_HOURS_END', 10),
-      respectActiveConversation: readBool('RESPECT_ACTIVE_CONVERSATION', true),
+      listenEnabled: readBool('LISTEN_ENABLED', true),
+      listenDurationMs: readNum('LISTEN_DURATION_MS', 7_000),
+      randomClipProbability: readNum('RANDOM_CLIP_PROBABILITY', 0.3),
+      whisperBinPath: process.env.WHISPER_BIN_PATH ?? 'whisper-cli',
+      whisperModelPath: path.resolve(
+        process.env.WHISPER_MODEL_PATH ?? './models/ggml-tiny.en.bin',
+      ),
       clipsDir: path.resolve(process.env.CLIPS_DIR ?? './clips'),
       dataDir: path.resolve(process.env.DATA_DIR ?? './data'),
     };

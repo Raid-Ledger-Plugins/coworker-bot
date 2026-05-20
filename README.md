@@ -16,12 +16,35 @@ Every `TICK_INTERVAL_MS` (default 2 min) the scheduler:
 2. Walks every voice channel in every enabled server, filters out
    muted/opted-out channels and channels that don't meet `MIN_OCCUPANTS`.
 3. Rolls a `VISIT_PROBABILITY` die. Most ticks do nothing.
-4. If the roll wins, joins the chosen channel, sits in awkward silence for
-   ~12s, samples voice activity, **aborts if humans are mid-conversation**
-   (set `RESPECT_ACTIVE_CONVERSATION=false` to be intrusive), then plays
-   1–3 random clips with pauses, lingers, and disconnects.
+4. If the roll wins, joins the chosen channel, **listens** for ~7s,
+   transcribes the audio with local whisper.cpp, picks a clip category from
+   the transcript via a small keyword tree, plays 1–3 clips, lingers, and
+   disconnects.
 
 Cooldowns are recorded in sqlite so behavior survives restarts.
+
+## Listening (contextual responses)
+
+After joining, the bot records ~7s of mixed channel audio, runs it through
+local whisper.cpp (`tiny.en` model), and matches the transcript against a
+keyword tree to pick a clip category:
+
+| If transcript contains...                       | Bot plays a clip from... |
+| ----------------------------------------------- | ------------------------ |
+| `stapler` / `office` / `meeting` / `coffee`     | `ty_stapler/`            |
+| `thank` / `thanks` / `appreciate`               | `ty/`                    |
+| `bye` / `goodbye` / `see ya` / `gtg` / `later`  | `bye/`                   |
+| `hungry` / `starving` / `lunch` / `dinner`      | `idle_hungry/`           |
+| `food` / `snack` / `larvae`                     | `hungry_larvae/`         |
+| (silent or no match)                            | `idle/`                  |
+
+`RANDOM_CLIP_PROBABILITY` (default 0.3) is the chance the keyword tree is
+overridden with a fully-random pick — keeps the bot from feeling robotic when
+the same word triggers the same category repeatedly. Set `LISTEN_ENABLED=false`
+in `.env` to skip listening entirely (every visit becomes a random clip).
+
+Audio is processed locally — no voice data leaves the host. The tree itself
+lives at `src/listener/clip-selector.service.ts`; add new keyword rules there.
 
 ## Setup
 
@@ -60,7 +83,17 @@ Install `opusscript` explicitly if needed: `npm i opusscript`.
 Put .mp3/.ogg/.opus/.wav files in `clips/`. See `clips/README.md` for the
 extraction walkthrough.
 
-### 5. Register slash commands
+### 5. Set up whisper.cpp (for contextual responses)
+
+```bash
+brew install whisper-cpp
+npm run setup-whisper        # downloads ggml-tiny.en (~75MB) into ./models/
+```
+
+Skip this step if you set `LISTEN_ENABLED=false` — the bot still works, it
+just plays random clips with no listening.
+
+### 6. Register slash commands
 
 ```bash
 npm run register-commands
@@ -69,7 +102,7 @@ npm run register-commands
 If `ALLOWED_GUILD_IDS` is set, commands register per-guild (instant). If empty,
 they register globally (takes up to an hour to propagate).
 
-### 6. Run
+### 7. Run
 
 ```bash
 # dev mode (auto-restart on file changes)
@@ -79,7 +112,7 @@ npm run start:dev
 npm run build && npm start
 ```
 
-### 7. Enable the bot in your server
+### 8. Enable the bot in your server
 
 In Discord, run `/coworker enable` (requires Manage Server permission). The
 bot won't visit anything until at least one server enables it.
