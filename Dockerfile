@@ -30,9 +30,11 @@ RUN git clone --depth=1 https://github.com/ggerganov/whisper.cpp /tmp/whisper.cp
 
 WORKDIR /app
 
-# Install all deps (incl. dev) so tsc can build, then prune to prod
+# Install all deps (incl. dev) so tsc can build, then prune to prod.
+# --include=dev is required because NODE_ENV=production (set above) would
+# otherwise cause npm ci to skip devDependencies, breaking the build step.
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 COPY . .
 RUN npm run build && npm prune --omit=dev
