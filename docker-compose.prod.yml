@@ -1,0 +1,12 @@
+services:
+  coworker-bot:
+    image: ghcr.io/raid-ledger-plugins/coworker-bot:latest
+    container_name: coworker-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # Persist the cooldown / opt-out / visit-log sqlite DB
+      - ./data:/app/data
+    init: true
+    # The bot only makes outbound connections to Discord's gateway;
+    # no inbound ports need to be exposed.

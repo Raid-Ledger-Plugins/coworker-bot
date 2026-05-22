@@ -139,6 +139,63 @@ container so the cooldown / opt-out database survives restarts.
 This deploys cleanly to a Synology NAS, a small VPS, or any other Docker
 host.
 
+### Prebuilt image from GHCR (no build on the NAS)
+
+Every push to `main` triggers
+[a GitHub Actions workflow](.github/workflows/docker.yml) that builds a
+multi-arch image (`linux/amd64` and `linux/arm64`) and pushes it to GHCR at
+`ghcr.io/raid-ledger-plugins/coworker-bot`. Tagging a release as `vX.Y.Z`
+also publishes `:X.Y.Z` and `:X.Y` tags. Useful when you don't want to spend
+NAS CPU compiling whisper.cpp.
+
+The included [`docker-compose.prod.yml`](docker-compose.prod.yml) pulls
+that image instead of building locally:
+
+```bash
+# On the NAS (or any Docker host)
+mkdir -p ~/coworker-bot && cd ~/coworker-bot
+
+# Drop in docker-compose.prod.yml and .env (copy from your dev machine,
+# or scp / git clone the repo and use just those two files)
+curl -fLO https://raw.githubusercontent.com/Raid-Ledger-Plugins/coworker-bot/main/docker-compose.prod.yml
+curl -fLO https://raw.githubusercontent.com/Raid-Ledger-Plugins/coworker-bot/main/.env.example
+mv .env.example .env
+# Fill in DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, ALLOWED_GUILD_IDS
+
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml logs -f
+
+# Update to the latest published image
+docker compose -f docker-compose.prod.yml pull && \
+  docker compose -f docker-compose.prod.yml up -d
+```
+
+The image is public — no `docker login` needed for `pull`. Slash commands
+still need to be registered once after first deploy; run
+`docker compose -f docker-compose.prod.yml exec coworker-bot \
+  node dist/scripts/register-commands.js` (or run `npm run register-commands`
+from a checkout of the repo on any machine — it just hits Discord's REST
+API).
+
+#### Synology DSM 7 (Container Manager)
+
+DSM 7 ships Container Manager, which understands `docker-compose.yml`:
+
+1. **File Station** → create `/docker/coworker-bot/` (or wherever your
+   container configs live). Upload `docker-compose.prod.yml` and your
+   filled-in `.env` into it. Create an empty `data/` subdirectory next to
+   them — this becomes the sqlite volume.
+2. **Container Manager** → **Project** → **Create**. Name it
+   `coworker-bot`, path = the folder you just created, source = "Use
+   existing docker-compose.yml". Point it at `docker-compose.prod.yml`.
+3. Hit **Next** through the wizard and let it pull + start. Logs are
+   visible from the project view.
+4. To update later: Container Manager → project → **Action** → **Build**
+   (which for a pull-only project just re-pulls), or SSH in and run
+   `docker compose -f docker-compose.prod.yml pull && \
+    docker compose -f docker-compose.prod.yml up -d`.
+
 ### macOS launchd (always-on on your Mac)
 
 If you'd rather run it on your Mac in the background and have it auto-start
