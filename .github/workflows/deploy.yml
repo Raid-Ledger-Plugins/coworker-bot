@@ -1,0 +1,32 @@
+name: Deploy to Fly
+
+# Auto-deploys to the coworker-bot Fly app on every push to main.
+# Uses Fly's remote builder (`--remote-only`) so this runner doesn't need
+# Docker — flyctl uploads the build context to Fly and the image build +
+# whisper.cpp compile happen on Fly's side.
+#
+# Setup: in repo Settings → Secrets and variables → Actions, add a secret
+# named FLY_API_TOKEN. Generate one locally with:
+#   flyctl tokens create deploy --expiry 8760h
+# (8760h = 1 year; rotate as needed.)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Don't pile up overlapping deploys; queue a new commit behind an in-flight one.
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: flyctl deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

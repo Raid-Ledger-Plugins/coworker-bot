@@ -11,6 +11,6 @@ import { TranscriberService } from './transcriber.service.js';
     ClipSelectorService,
     ListenerService,
   ],
-  exports: [ListenerService],
+  exports: [ListenerService, ClipSelectorService],
 })
 export class ListenerModule {}

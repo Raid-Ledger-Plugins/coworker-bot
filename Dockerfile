@@ -8,6 +8,7 @@ ENV NODE_ENV=production \
     WHISPER_BIN_PATH=/usr/local/bin/whisper-cli \
     WHISPER_MODEL_PATH=/app/models/ggml-tiny.en.bin \
     CLIPS_DIR=/app/clips \
+    LINES_DIR=/app/lines \
     DATA_DIR=/app/data
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -18,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
         python3 \
+        tini \
     && rm -rf /var/lib/apt/lists/*
 
 # Build whisper.cpp from source and install the CLI binary
@@ -44,7 +46,15 @@ RUN mkdir -p models \
     && curl -fL -o models/ggml-tiny.en.bin \
        https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
 
-# sqlite cooldown DB lives here — mount a volume to persist across restarts
+# sqlite cooldown DB lives here — mount a volume to persist across restarts.
+# On Fly the same volume also holds /app/data/logs (set LOG_DIR in fly.toml).
 VOLUME ["/app/data"]
 
+# Optional health endpoint binds 0.0.0.0:$HEALTH_PORT (8080 on Fly). No EXPOSE /
+# published port is needed — Fly's machine check reaches it on the private
+# network; outside Fly the bot is outbound-only.
+
+# tini as PID 1 forwards SIGTERM for a clean shutdown and reaps the ffmpeg /
+# whisper-cli subprocesses the bot spawns during voice visits.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/main.js"]

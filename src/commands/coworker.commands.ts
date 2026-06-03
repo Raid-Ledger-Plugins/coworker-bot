@@ -5,12 +5,15 @@ import {
   Interaction,
   MessageFlags,
   PermissionFlagsBits,
+  TextChannel,
   VoiceBasedChannel,
 } from 'discord.js';
 import { DiscordClientService } from '../bot/discord-client.service.js';
 import { StateStoreService } from '../state/state-store.service.js';
 import { VisitOrchestratorService } from '../visit/visit-orchestrator.service.js';
 import { ClipLoaderService } from '../clips/clip-loader.service.js';
+import { LineLoaderService } from '../lines/line-loader.service.js';
+import { TextPostOrchestratorService } from '../text/text-post-orchestrator.service.js';
 
 @Injectable()
 export class CoworkerCommandsService implements OnModuleInit {
@@ -21,6 +24,8 @@ export class CoworkerCommandsService implements OnModuleInit {
     private readonly state: StateStoreService,
     private readonly visit: VisitOrchestratorService,
     private readonly clips: ClipLoaderService,
+    private readonly textPost: TextPostOrchestratorService,
+    private readonly lines: LineLoaderService,
   ) {}
 
   onModuleInit(): void {
@@ -49,6 +54,8 @@ export class CoworkerCommandsService implements OnModuleInit {
         return this.cmdEnable(interaction, false);
       case 'visit':
         return this.cmdVisit(interaction);
+      case 'post':
+        return this.cmdPost(interaction);
       case 'stats':
         return this.cmdStats(interaction);
       case 'mute-channel':
@@ -57,6 +64,8 @@ export class CoworkerCommandsService implements OnModuleInit {
         return this.cmdMuteChannel(interaction, false);
       case 'reload-clips':
         return this.cmdReloadClips(interaction);
+      case 'reload-lines':
+        return this.cmdReloadLines(interaction);
       default:
         await interaction.reply({
           content: `unknown subcommand: ${sub}`,
@@ -110,17 +119,51 @@ export class CoworkerCommandsService implements OnModuleInit {
     });
   }
 
+  private async cmdPost(
+    interaction: ChatInputCommandInteraction,
+  ): Promise<void> {
+    if (!this.requireAdmin(interaction)) return;
+    const channel = interaction.options.getChannel('channel', true);
+    if (channel.type !== ChannelType.GuildText) {
+      await interaction.reply({
+        content: 'channel must be a text channel',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    await interaction.reply({
+      content: `sending coworker to post in <#${channel.id}>...`,
+      flags: MessageFlags.Ephemeral,
+    });
+    const guild = interaction.guild!;
+    const text = guild.channels.cache.get(channel.id) as TextChannel | undefined;
+    if (!text) return;
+    const result = await this.textPost.post(text);
+    await interaction.followUp({
+      content: result.ok
+        ? `posted (category=${result.category ?? 'random'})`
+        : `post aborted: ${result.reason}`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
   private async cmdStats(
     interaction: ChatInputCommandInteraction,
   ): Promise<void> {
     const s = this.state.stats();
     const last = s.lastVisitAt ? new Date(s.lastVisitAt).toISOString() : 'never';
+    const lastText = s.lastTextPostAt
+      ? new Date(s.lastTextPostAt).toISOString()
+      : 'never';
     await interaction.reply({
       content:
         `total visits: ${s.totalVisits}\n` +
         `last 24h: ${s.visitsLast24h}\n` +
         `last visit: ${last}\n` +
-        `clips loaded: ${this.clips.count()}`,
+        `clips loaded: ${this.clips.count()}\n` +
+        `total text posts: ${s.totalTextPosts}\n` +
+        `last text post: ${lastText}\n` +
+        `lines loaded: ${this.lines.count()}`,
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -147,6 +190,17 @@ export class CoworkerCommandsService implements OnModuleInit {
     this.clips.reload();
     await interaction.reply({
       content: `reloaded ${this.clips.count()} clips`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
+  private async cmdReloadLines(
+    interaction: ChatInputCommandInteraction,
+  ): Promise<void> {
+    if (!this.requireAdmin(interaction)) return;
+    this.lines.reload();
+    await interaction.reply({
+      content: `reloaded ${this.lines.count()} lines`,
       flags: MessageFlags.Ephemeral,
     });
   }

@@ -1,0 +1,61 @@
+# Fly.io app config for coworker-bot.
+#
+# Worker-style app: no inbound HTTP, just a long-lived gateway connection to
+# Discord (plus outbound UDP for voice). With no [http_service] / [[services]]
+# block Fly never auto-stops the machine — it stays up.
+#
+# See the README "Fly.io deploy" section for the full walkthrough.
+
+app = "coworker-bot"        # globally unique — run `fly launch` to claim/rename
+primary_region = "ord"      # Chicago. Change to taste; closer = lower latency.
+
+[build]                     # empty → Fly's remote builder compiles ./Dockerfile
+
+[deploy]
+  strategy = "immediate"
+
+# Non-secret config. Secrets (DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID,
+# ALLOWED_GUILD_IDS) are set with `fly secrets set ...` and injected at
+# runtime — never put them here.
+[env]
+  NODE_ENV = "production"
+  DATA_DIR = "/app/data"
+  # Persist a filtered, rotated copy of the bot's own log lines onto the volume
+  # so history survives past Fly's short stdout buffer. See
+  # src/logging/file-tee-logger.ts for what makes the cut.
+  LOG_LEVEL = "info"
+  LOG_DIR = "/app/data/logs"
+  LOG_KEEP_DAYS = "60"
+  # Health endpoint for the [[checks]] block below.
+  HEALTH_PORT = "8080"
+  # Contextual voice responses (whisper.cpp transcription) on.
+  LISTEN_ENABLED = "true"
+
+# sqlite cooldown DB + rotated logs live on a volume so they survive deploys
+# and restarts. Create it in the same region as the machine:
+#   fly volumes create coworker_data --size 1 --region ord
+[[mounts]]
+  source = "coworker_data"
+  destination = "/app/data"
+  initial_size = "1gb"
+
+# whisper.cpp transcription is memory-hungry for a few seconds per voice visit,
+# so we give it more headroom than a text-only bot would need.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 1024
+
+# Machine-level health check. The bot serves /health on 0.0.0.0:8080
+# (src/health/health.service.ts): 200 once the Discord gateway is ready, 503
+# otherwise. With no [[services]] block this port is only reachable inside the
+# Fly private network. Repeated failures cause Fly to restart the machine.
+[[checks]]
+  name = "bot_ready"
+  type = "http"
+  port = 8080
+  path = "/health"
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "60s"
+  method = "GET"
