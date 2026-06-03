@@ -132,14 +132,14 @@ export class VisitOrchestratorService {
     let hookedNetworking: unknown = null;
 
     connection.on('stateChange', (oldState, newState) => {
-      this.logger.log(
+      this.logger.debug(
         `voice ${where}: connection ${oldState.status} -> ${newState.status}`,
       );
       const net = (newState as { networking?: NetworkingLike }).networking;
       if (net && net !== hookedNetworking) {
         hookedNetworking = net;
         net.on('stateChange', (o, n) =>
-          this.logger.log(
+          this.logger.debug(
             `voice ${where}: networking ${netCode(o)} -> ${netCode(n)}`,
           ),
         );
