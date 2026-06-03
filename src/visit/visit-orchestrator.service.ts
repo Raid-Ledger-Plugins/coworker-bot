@@ -34,6 +34,7 @@ interface NetworkingLike {
     listener: (oldState: NetworkingState, newState: NetworkingState) => void,
   ): unknown;
   on(event: 'error', listener: (err: unknown) => void): unknown;
+  on(event: 'close', listener: (code: number) => void): unknown;
 }
 
 /** NetworkingStatusCode order in @discordjs/voice (not publicly exported). */
@@ -144,6 +145,9 @@ export class VisitOrchestratorService {
         );
         net.on('error', (err) =>
           this.logger.warn(`voice ${where}: networking error: ${String(err)}`),
+        );
+        net.on('close', (code) =>
+          this.logger.warn(`voice ${where}: voice ws closed with code ${code}`),
         );
       }
     });
