@@ -24,6 +24,29 @@ interface VisitResult {
   durationMs: number;
 }
 
+/** Minimal shape of @discordjs/voice's internal Networking event emitter. */
+interface NetworkingState {
+  code?: number;
+}
+interface NetworkingLike {
+  on(
+    event: 'stateChange',
+    listener: (oldState: NetworkingState, newState: NetworkingState) => void,
+  ): unknown;
+  on(event: 'error', listener: (err: unknown) => void): unknown;
+}
+
+/** NetworkingStatusCode order in @discordjs/voice (not publicly exported). */
+const NETWORKING_CODES = [
+  'OpeningWs',
+  'Identifying',
+  'UdpHandshaking',
+  'SelectingProtocol',
+  'Ready',
+  'Resuming',
+  'Closed',
+];
+
 const CONNECTION_READY_TIMEOUT_MS = 15_000;
 
 @Injectable()
@@ -66,6 +89,7 @@ export class VisitOrchestratorService {
     let clipsPlayed = 0;
     try {
       connection = this.openConnection(channel);
+      this.attachVoiceDebug(connection, channel);
       await entersState(
         connection,
         VoiceConnectionStatus.Ready,
@@ -90,6 +114,43 @@ export class VisitOrchestratorService {
         /* ignore */
       }
     }
+  }
+
+  /**
+   * Logs the voice connection's state machine so we can see exactly where a
+   * stalled visit gets stuck. The connection goes Signalling -> Connecting ->
+   * Ready; the nested networking goes ... -> UdpHandshaking -> SelectingProtocol
+   * -> Ready. A stall at networking `UdpHandshaking` points at UDP / IP
+   * discovery (the usual culprit when voice fails in a container).
+   */
+  private attachVoiceDebug(
+    connection: VoiceConnection,
+    channel: VoiceBasedChannel,
+  ): void {
+    const where = `${channel.guild.name}#${channel.name}`;
+    let hookedNetworking: unknown = null;
+
+    connection.on('stateChange', (oldState, newState) => {
+      this.logger.log(
+        `voice ${where}: connection ${oldState.status} -> ${newState.status}`,
+      );
+      const net = (newState as { networking?: NetworkingLike }).networking;
+      if (net && net !== hookedNetworking) {
+        hookedNetworking = net;
+        net.on('stateChange', (o, n) =>
+          this.logger.log(
+            `voice ${where}: networking ${netCode(o)} -> ${netCode(n)}`,
+          ),
+        );
+        net.on('error', (err) =>
+          this.logger.warn(`voice ${where}: networking error: ${String(err)}`),
+        );
+      }
+    });
+
+    connection.on('error', (err) =>
+      this.logger.warn(`voice ${where}: connection error: ${String(err)}`),
+    );
   }
 
   private recordOutcome(
@@ -188,4 +249,9 @@ function pickClipCount(min: number, max: number): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function netCode(state: NetworkingState): string {
+  if (state.code === undefined) return 'unknown';
+  return NETWORKING_CODES[state.code] ?? `code${state.code}`;
 }
