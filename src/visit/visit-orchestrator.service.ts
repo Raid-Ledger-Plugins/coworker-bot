@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  AudioPlayer,
   AudioPlayerStatus,
   DiscordGatewayAdapterCreator,
+  NoSubscriberBehavior,
   StreamType,
   VoiceConnection,
   VoiceConnectionStatus,
@@ -49,6 +51,9 @@ const NETWORKING_CODES = [
 ];
 
 const CONNECTION_READY_TIMEOUT_MS = 15_000;
+
+/** Grace period after the last clip so trailing audio frames finish sending. */
+const PLAYBACK_FLUSH_MS = 600;
 
 @Injectable()
 export class VisitOrchestratorService {
@@ -205,26 +210,39 @@ export class VisitOrchestratorService {
     const cfg = this.cfg.config;
     const count = pickClipCount(cfg.clipsPerVisitMin, cfg.clipsPerVisitMax);
     const picks = this.clips.pickSequence(count, category);
+    if (picks.length === 0) return 0;
+
+    // One player, subscribed once for the whole visit. Re-creating the player
+    // and re-subscribing per clip churns the audio path and clips the start/end
+    // of clips; keeping a single subscription lets each clip's tail drain
+    // during the pause before the next one.
+    const player = createAudioPlayer({
+      behaviors: { noSubscriber: NoSubscriberBehavior.Play },
+    });
+    const subscription = connection.subscribe(player);
     let played = 0;
-    for (const clip of picks) {
-      const ok = await this.playOne(connection, clip);
-      if (ok) played++;
-      if (played < picks.length) {
-        await sleep(cfg.pauseBetweenClipsMs);
+    try {
+      for (let i = 0; i < picks.length; i++) {
+        if (await this.playOne(player, picks[i])) played++;
+        if (i < picks.length - 1) {
+          await sleep(cfg.pauseBetweenClipsMs);
+        }
       }
+      // Let the final clip's audio fully transmit before tearing the
+      // subscription down (Idle fires once the stream ends, but a few frames
+      // may still be in flight).
+      await sleep(PLAYBACK_FLUSH_MS);
+    } finally {
+      subscription?.unsubscribe();
+      player.stop(true);
     }
     return played;
   }
 
-  private async playOne(
-    connection: VoiceConnection,
-    clip: Clip,
-  ): Promise<boolean> {
-    const player = createAudioPlayer();
+  private async playOne(player: AudioPlayer, clip: Clip): Promise<boolean> {
     const resource = createAudioResource(clip.filePath, {
       inputType: StreamType.Arbitrary,
     });
-    const sub = connection.subscribe(player);
     try {
       player.play(resource);
       await entersState(player, AudioPlayerStatus.Playing, 5_000);
@@ -238,9 +256,6 @@ export class VisitOrchestratorService {
     } catch (err) {
       this.logger.warn(`clip failed: ${clip.name} — ${String(err)}`);
       return false;
-    } finally {
-      sub?.unsubscribe();
-      player.stop(true);
     }
   }
 }
