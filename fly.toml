@@ -6,7 +6,7 @@
 #
 # See the README "Fly.io deploy" section for the full walkthrough.
 
-app = "coworker-bot"        # globally unique — run `fly launch` to claim/rename
+app = "coworker-bot-discord"
 primary_region = "ord"      # Chicago. Change to taste; closer = lower latency.
 
 [build]                     # empty → Fly's remote builder compiles ./Dockerfile
