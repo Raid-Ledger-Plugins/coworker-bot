@@ -22,12 +22,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Build whisper.cpp from source and install the CLI binary
+# Build whisper.cpp from source and install the CLI binary + its shared libs.
+# Recent whisper.cpp builds whisper-cli dynamically linked against
+# libwhisper.so / libggml*.so, so we must install those into a system lib path
+# (and refresh the linker cache) or the binary fails at runtime with
+# "libwhisper.so.1: cannot open shared object file".
 RUN git clone --depth=1 https://github.com/ggerganov/whisper.cpp /tmp/whisper.cpp \
     && cd /tmp/whisper.cpp \
     && cmake -B build -DGGML_NATIVE=OFF -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_TESTS=OFF \
     && cmake --build build --config Release -j "$(nproc)" \
     && cp build/bin/whisper-cli /usr/local/bin/whisper-cli \
+    && find build -name '*.so*' -exec cp -P {} /usr/local/lib/ \; \
+    && ldconfig \
     && rm -rf /tmp/whisper.cpp
 
 WORKDIR /app
