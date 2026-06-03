@@ -244,6 +244,102 @@ tail -f data/launchd.stdout.log data/launchd.stderr.log
 launchctl unload ~/Library/LaunchAgents/com.coworker-bot.plist
 ```
 
+### Fly.io
+
+Fly runs the bot as a worker-style app: no inbound HTTP, just the long-lived
+gateway connection plus outbound UDP for voice. The included
+[`fly.toml`](fly.toml) builds the existing `Dockerfile` on Fly's remote
+builder, mounts a volume for the sqlite DB **and** the rotated logs, and runs a
+health check that restarts the machine if the gateway wedges.
+
+Heads-up: Fly's free allowance ended in late 2024. A `shared-cpu-1x` / 1 GB
+machine (enough headroom for whisper.cpp transcription) plus a 1 GB volume runs
+a few dollars a month; you'll need a payment method on the account.
+
+**1. Install flyctl and log in.**
+
+```bash
+brew install flyctl          # macOS; see fly.io/docs for Linux/Windows
+fly auth login               # opens a browser
+```
+
+**2. Claim an app name + region.** App names are global, so `coworker-bot` is
+likely taken. Either edit the `app` / `primary_region` lines in `fly.toml`, or
+let flyctl pick:
+
+```bash
+fly launch --no-deploy --copy-config
+```
+
+`--no-deploy` stops it deploying before the volume/secrets exist;
+`--copy-config` keeps the committed `fly.toml`.
+
+**3. Create the volume** (region must match `primary_region`). It holds both
+`coworker.db` and `logs/`:
+
+```bash
+fly volumes create coworker_data --size 1 --region ord
+```
+
+**4. Set your secrets** (encrypted, injected as env vars — never commit them):
+
+```bash
+fly secrets set \
+    DISCORD_BOT_TOKEN=your_discord_token \
+    DISCORD_CLIENT_ID=your_application_id \
+    ALLOWED_GUILD_IDS=your_server_id
+```
+
+**5. Deploy and register the slash commands.**
+
+```bash
+fly deploy                   # builds remotely, ships, starts the machine
+fly logs                     # watch for "Logged in as ..."
+fly status                   # the bot_ready health check should be passing
+
+# One-off: register the /coworker commands (the machine has your secrets)
+fly ssh console -C "node dist/scripts/register-commands.js"
+```
+
+Then run `/coworker enable` in your server. Tuning knobs (`VISIT_PROBABILITY`,
+quiet hours, etc.) can be added under `[env]` in `fly.toml` (non-secrets) or via
+`fly secrets set`.
+
+#### Logs
+
+Two layers:
+
+- **Live tail:** `fly logs` streams stdout (the full firehose).
+- **Persistent history:** the bot also writes a *filtered* log to the volume at
+  `/app/data/logs/coworker.log` — every warning/error plus the bot's own
+  info lines (framework boot chatter is dropped). It rotates daily and keeps
+  `LOG_KEEP_DAYS` (default 60) files, so history survives past Fly's short
+  stdout buffer and across restarts. Read it with:
+
+  ```bash
+  fly ssh console -C "ls -la /app/data/logs"
+  fly ssh console -C "tail -n 100 /app/data/logs/coworker.log"
+  # or pull a copy down:
+  fly ssh sftp get /app/data/logs/coworker.log ./coworker.log
+  ```
+
+  Locally this file sink is off unless you set `LOG_DIR`.
+
+#### Auto-deploy on push (optional)
+
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs
+`flyctl deploy --remote-only` on every push to `main`. To enable it, add a
+`FLY_API_TOKEN` repository secret (**Settings → Secrets and variables →
+Actions**), generated with:
+
+```bash
+fly tokens create deploy --expiry 8760h
+```
+
+> Note: only **one** machine should run — the sqlite cooldown DB lives on a
+> single volume, and two instances would double-join voice channels. Don't
+> `fly scale count 2`.
+
 ## Slash commands
 
 | Command | What it does |
@@ -302,6 +398,8 @@ src/
 ├── main.ts                                  Standalone bootstrap
 ├── app.module.ts                            Root NestJS module
 ├── config/coworker.config.ts                Env → typed config
+├── logging/file-tee-logger.ts               Stdout + filtered rotated-file logger
+├── health/health.service.ts                 GET /health for Fly's restart probe
 ├── bot/discord-client.service.ts            discord.js Client lifecycle
 ├── state/state-store.service.ts             better-sqlite3: visits, text posts, opt-outs
 ├── clips/clip-loader.service.ts             Scans clips/, category-aware picker

@@ -33,6 +33,10 @@ export interface CoworkerConfig {
   clipsDir: string;
   linesDir: string;
   dataDir: string;
+  logLevel: string;
+  logDir: string;
+  logKeepDays: number;
+  healthPort: number;
 }
 
 function readNum(key: string, fallback: number): number {
@@ -96,6 +100,12 @@ export class CoworkerConfigService {
       clipsDir: path.resolve(process.env.CLIPS_DIR ?? './clips'),
       linesDir: path.resolve(process.env.LINES_DIR ?? './lines'),
       dataDir: path.resolve(process.env.DATA_DIR ?? './data'),
+      logLevel: (process.env.LOG_LEVEL ?? 'info').toLowerCase(),
+      logDir: process.env.LOG_DIR?.trim()
+        ? path.resolve(process.env.LOG_DIR)
+        : '',
+      logKeepDays: readNum('LOG_KEEP_DAYS', 60),
+      healthPort: readNum('HEALTH_PORT', 0),
     };
   }
 
