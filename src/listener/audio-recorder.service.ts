@@ -40,12 +40,16 @@ export class AudioRecorderService {
       return null;
     }
 
-    const wavPath = await mixToWav(session);
+    await mixToWav(session);
+    // Move the WAV out of the temp dir BEFORE cleanup, which deletes tmpDir
+    // recursively — otherwise the caller gets a path to an already-deleted file.
+    const finalWav = `${session.tmpDir}.wav`;
+    fs.renameSync(session.wavPath, finalWav);
     cleanup(session);
     this.logger.log(
-      `listener captured ${session.userFiles.size} speakers -> ${wavPath}`,
+      `listener captured ${session.userFiles.size} speakers -> ${finalWav}`,
     );
-    return wavPath;
+    return finalWav;
   }
 
   private attachUserStream(
