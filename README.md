@@ -31,6 +31,22 @@ or per-server with a slash command.
 
 All transcription runs **locally** — no voice data ever leaves the host.
 
+### It does the same thing in text channels — but rarely
+
+The bot also chimes into **text** channels, much less often (capped at roughly
+**once a week** by default). On each tick it occasionally looks for a text
+channel with **live chatter** — several recent messages from a few different
+people — reads the last handful of messages, runs them through the *same*
+keyword tree the voice path uses, and posts one short in-character line — e.g.
+someone says *"thanks for the coffee"* and a while later the Coworker replies
+*"Take the stapler. I have three more."* If nobody's actually talking, it stays
+quiet.
+
+The text lines live in [`lines/`](lines/README.md) as plain `.txt` files,
+organized into the same category folders as the audio clips. Reading message
+text requires Discord's **Message Content Intent** (see the setup step below);
+set `TEXT_ENABLED=false` to turn the whole text path off.
+
 ### The keyword tree
 
 | Heard...                                        | Plays a clip from... |
@@ -86,8 +102,11 @@ another bot you run.
    → name it whatever
 2. **Bot** tab → **Reset Token** → copy it. That goes into `.env` as
    `DISCORD_BOT_TOKEN`. Discord only shows the token once.
-3. On the same tab, toggle **Server Members Intent** ON. (Lets the bot see
-   who's in voice channels. It does *not* need Message Content Intent.)
+3. On the same tab, toggle **Server Members Intent** ON (lets the bot see who's
+   in voice channels) and **Message Content Intent** ON (lets it read recent
+   text messages so it can respond in text channels). Both are under *Privileged
+   Gateway Intents*. If you don't want the text feature, you can leave Message
+   Content off and set `TEXT_ENABLED=false` in `.env`.
 4. **General Information** tab → copy the **Application ID** into `.env`
    as `DISCORD_CLIENT_ID`
 5. **OAuth2 → URL Generator** → check the `bot` and `applications.commands`
@@ -229,13 +248,15 @@ launchctl unload ~/Library/LaunchAgents/com.coworker-bot.plist
 
 | Command | What it does |
 |---------|--------------|
-| `/coworker enable` | Allow the bot to visit voice channels in this server |
-| `/coworker disable` | Stop all ambient visits in this server |
-| `/coworker visit channel:#voice` | Force a visit now — useful for testing |
-| `/coworker stats` | Total visits, last 24h, last visit time, clips loaded |
-| `/coworker mute-channel channel:#voice` | Skip a specific voice channel forever |
-| `/coworker unmute-channel channel:#voice` | Reverse the above |
+| `/coworker enable` | Allow the bot to visit voice channels and post in text channels in this server |
+| `/coworker disable` | Stop all ambient visits and text posts in this server |
+| `/coworker visit channel:#voice` | Force a voice visit now — useful for testing |
+| `/coworker post channel:#text` | Force a text post now — useful for testing |
+| `/coworker stats` | Visits, text posts, last-seen times, clips and lines loaded |
+| `/coworker mute-channel channel:#chan` | Skip a specific voice or text channel forever |
+| `/coworker unmute-channel channel:#chan` | Reverse the above |
 | `/coworker reload-clips` | Re-scan `clips/` without restarting the bot |
+| `/coworker reload-lines` | Re-scan `lines/` without restarting the bot |
 
 All commands require Manage Server permission, except `/coworker stats`
 which anyone can run.
@@ -248,16 +269,23 @@ ones you're most likely to touch:
 
 - `VISIT_PROBABILITY` — chance of attempting a visit on any tick (default `0.03`)
 - `GLOBAL_COOLDOWN_MIN` / `CHANNEL_COOLDOWN_MIN` — minimum minutes between visits
-- `QUIET_HOURS_START` / `QUIET_HOURS_END` — hours during which the bot won't visit
+- `QUIET_HOURS_START` / `QUIET_HOURS_END` — hours during which the bot won't visit or post
 - `LISTEN_ENABLED` — set to `false` to skip transcription (every visit becomes random)
 - `RANDOM_CLIP_PROBABILITY` — chance to override the keyword match with a random pick
+- `TEXT_ENABLED` — set to `false` to disable the text-channel feature entirely
+- `TEXT_POST_PROBABILITY` — chance of attempting a text post on any tick (default `0.05`)
+- `TEXT_GLOBAL_COOLDOWN_MIN` / `TEXT_CHANNEL_COOLDOWN_MIN` — minutes between text posts (default `10080` = 7 days)
+- `TEXT_ACTIVITY_WINDOW_MIN` — the recency window for "active chatter" (default `60`)
+- `TEXT_MIN_MESSAGES` / `TEXT_MIN_AUTHORS` — a channel only counts as active with at least this many human messages from this many distinct people inside the window (defaults `4` / `2`)
+- `TEXT_CONTEXT_MESSAGES` — how many recent messages to read for keyword context (default `20`)
 
 ## Extending the keyword tree
 
 The whole tree lives in
-[`src/listener/clip-selector.service.ts`](src/listener/clip-selector.service.ts).
-Each rule is a list of keywords mapped to a category, which is the name of
-a subfolder under `clips/`. Order matters — more-specific rules go first
+[`src/listener/clip-selector.service.ts`](src/listener/clip-selector.service.ts)
+and is shared by both the voice and text paths. Each rule is a list of keywords
+mapped to a category, which is the name of a subfolder under `clips/` (for audio)
+and `lines/` (for text). Order matters — more-specific rules go first
 (so *"thanks for the stapler"* picks `ty_stapler/`, not `ty/`).
 
 To add a new category:
@@ -275,15 +303,20 @@ src/
 ├── app.module.ts                            Root NestJS module
 ├── config/coworker.config.ts                Env → typed config
 ├── bot/discord-client.service.ts            discord.js Client lifecycle
-├── state/state-store.service.ts             better-sqlite3: visits, opt-outs
+├── state/state-store.service.ts             better-sqlite3: visits, text posts, opt-outs
 ├── clips/clip-loader.service.ts             Scans clips/, category-aware picker
+├── lines/line-loader.service.ts             Scans lines/, category-aware text picker
 ├── listener/
 │   ├── audio-recorder.service.ts            VoiceReceiver → ffmpeg → WAV
 │   ├── transcriber.service.ts               whisper-cli subprocess
-│   ├── clip-selector.service.ts             Keyword tree → category
+│   ├── clip-selector.service.ts             Keyword tree → category (shared w/ text)
 │   └── listener.service.ts                  Orchestrator + random override
 ├── visit/visit-orchestrator.service.ts      Join → listen → play → linger → leave
-├── scheduler/scheduler.service.ts           Periodic tick + probability gate
+├── text/
+│   ├── text-context.service.ts              Reads recent messages for context
+│   ├── text-eligibility.service.ts          Text cooldowns, activity window
+│   └── text-post-orchestrator.service.ts    Read → keyword tree → post a line
+├── scheduler/scheduler.service.ts           Periodic tick: voice visit + (rare) text post
 ├── scheduler/visit-eligibility.service.ts   Cooldowns, quiet hours, occupancy
 └── commands/coworker.commands.ts            /coworker slash-command handlers
 ```

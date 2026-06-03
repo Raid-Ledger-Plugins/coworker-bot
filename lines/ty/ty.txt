@@ -1,0 +1,9 @@
+# Thank-you replies. One phrase per line. Lines starting with # are ignored.
+Oh. You're welcome, I suppose.
+Don't mention it. Really. Don't.
+Anytime, colleague.
+Happy to assist. It is in my job description.
+Gratitude noted and filed.
+No trouble at all. I had nothing else scheduled.
+You are too kind. I am not used to it.
+Of course. We are a team, after all.

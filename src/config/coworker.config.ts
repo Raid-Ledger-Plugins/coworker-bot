@@ -19,9 +19,19 @@ export interface CoworkerConfig {
   listenEnabled: boolean;
   listenDurationMs: number;
   randomClipProbability: number;
+  textEnabled: boolean;
+  textPostProbability: number;
+  textGlobalCooldownMin: number;
+  textChannelCooldownMin: number;
+  textActivityWindowMin: number;
+  textMinMessages: number;
+  textMinAuthors: number;
+  textContextMessages: number;
+  randomLineProbability: number;
   whisperBinPath: string;
   whisperModelPath: string;
   clipsDir: string;
+  linesDir: string;
   dataDir: string;
 }
 
@@ -70,11 +80,21 @@ export class CoworkerConfigService {
       listenEnabled: readBool('LISTEN_ENABLED', true),
       listenDurationMs: readNum('LISTEN_DURATION_MS', 7_000),
       randomClipProbability: readNum('RANDOM_CLIP_PROBABILITY', 0.3),
+      textEnabled: readBool('TEXT_ENABLED', true),
+      textPostProbability: readNum('TEXT_POST_PROBABILITY', 0.05),
+      textGlobalCooldownMin: readNum('TEXT_GLOBAL_COOLDOWN_MIN', 10_080),
+      textChannelCooldownMin: readNum('TEXT_CHANNEL_COOLDOWN_MIN', 10_080),
+      textActivityWindowMin: readNum('TEXT_ACTIVITY_WINDOW_MIN', 60),
+      textMinMessages: readNum('TEXT_MIN_MESSAGES', 4),
+      textMinAuthors: readNum('TEXT_MIN_AUTHORS', 2),
+      textContextMessages: readNum('TEXT_CONTEXT_MESSAGES', 20),
+      randomLineProbability: readNum('RANDOM_LINE_PROBABILITY', 0.3),
       whisperBinPath: process.env.WHISPER_BIN_PATH ?? 'whisper-cli',
       whisperModelPath: path.resolve(
         process.env.WHISPER_MODEL_PATH ?? './models/ggml-tiny.en.bin',
       ),
       clipsDir: path.resolve(process.env.CLIPS_DIR ?? './clips'),
+      linesDir: path.resolve(process.env.LINES_DIR ?? './lines'),
       dataDir: path.resolve(process.env.DATA_DIR ?? './data'),
     };
   }

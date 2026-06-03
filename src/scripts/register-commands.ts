@@ -25,6 +25,36 @@ function buildCommand(): SlashCommandBuilder {
         .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice),
     );
 
+  const addTextChannelOption = (
+    sub: SlashCommandSubcommandBuilder,
+    name: string,
+    description: string,
+  ): SlashCommandSubcommandBuilder =>
+    sub.addChannelOption((opt) =>
+      opt
+        .setName(name)
+        .setDescription(description)
+        .setRequired(true)
+        .addChannelTypes(ChannelType.GuildText),
+    );
+
+  const addAnyChannelOption = (
+    sub: SlashCommandSubcommandBuilder,
+    name: string,
+    description: string,
+  ): SlashCommandSubcommandBuilder =>
+    sub.addChannelOption((opt) =>
+      opt
+        .setName(name)
+        .setDescription(description)
+        .setRequired(true)
+        .addChannelTypes(
+          ChannelType.GuildVoice,
+          ChannelType.GuildStageVoice,
+          ChannelType.GuildText,
+        ),
+    );
+
   builder.addSubcommand((s) =>
     s.setName('enable').setDescription('Enable the Coworker for this server'),
   );
@@ -39,30 +69,44 @@ function buildCommand(): SlashCommandBuilder {
     ),
   );
   builder.addSubcommand((s) =>
-    s.setName('stats').setDescription('Show visit stats'),
-  );
-  builder.addSubcommand((s) =>
-    addVoiceChannelOption(
+    addTextChannelOption(
       s
-        .setName('mute-channel')
-        .setDescription('Stop the bot from visiting a channel'),
+        .setName('post')
+        .setDescription('Force a text post to a text channel now'),
       'channel',
-      'Voice channel to mute',
+      'Text channel to post in',
     ),
   );
   builder.addSubcommand((s) =>
-    addVoiceChannelOption(
+    s.setName('stats').setDescription('Show visit and text-post stats'),
+  );
+  builder.addSubcommand((s) =>
+    addAnyChannelOption(
+      s
+        .setName('mute-channel')
+        .setDescription('Stop the bot from visiting or posting in a channel'),
+      'channel',
+      'Voice or text channel to mute',
+    ),
+  );
+  builder.addSubcommand((s) =>
+    addAnyChannelOption(
       s
         .setName('unmute-channel')
-        .setDescription('Allow the bot to visit a channel again'),
+        .setDescription('Allow the bot to use a channel again'),
       'channel',
-      'Voice channel to unmute',
+      'Voice or text channel to unmute',
     ),
   );
   builder.addSubcommand((s) =>
     s
       .setName('reload-clips')
       .setDescription('Re-scan the clips folder without restarting'),
+  );
+  builder.addSubcommand((s) =>
+    s
+      .setName('reload-lines')
+      .setDescription('Re-scan the lines folder without restarting'),
   );
 
   return builder;
