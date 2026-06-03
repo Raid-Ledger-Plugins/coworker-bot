@@ -8,6 +8,7 @@ ENV NODE_ENV=production \
     WHISPER_BIN_PATH=/usr/local/bin/whisper-cli \
     WHISPER_MODEL_PATH=/app/models/ggml-tiny.en.bin \
     CLIPS_DIR=/app/clips \
+    LINES_DIR=/app/lines \
     DATA_DIR=/app/data
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

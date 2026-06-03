@@ -12,6 +12,14 @@ interface VisitRow {
   clips_played: number;
 }
 
+interface TextPostRow {
+  guild_id: string;
+  channel_id: string;
+  posted_at: number;
+  category: string;
+  line: string;
+}
+
 @Injectable()
 export class StateStoreService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StateStoreService.name);
@@ -57,6 +65,17 @@ export class StateStoreService implements OnModuleInit, OnModuleDestroy {
         enabled INTEGER NOT NULL DEFAULT 0,
         enabled_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS text_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        posted_at INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        line TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_text_posts_channel ON text_posts(channel_id, posted_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_text_posts_global ON text_posts(posted_at DESC);
     `);
   }
 
@@ -83,6 +102,31 @@ export class StateStoreService implements OnModuleInit, OnModuleDestroy {
       )
       .get(channelId) as { visited_at: number } | undefined;
     return row?.visited_at ?? null;
+  }
+
+  recordTextPost(row: TextPostRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO text_posts (guild_id, channel_id, posted_at, category, line)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(row.guild_id, row.channel_id, row.posted_at, row.category, row.line);
+  }
+
+  lastGlobalTextPostAt(): number | null {
+    const row = this.db
+      .prepare(`SELECT posted_at FROM text_posts ORDER BY posted_at DESC LIMIT 1`)
+      .get() as { posted_at: number } | undefined;
+    return row?.posted_at ?? null;
+  }
+
+  lastChannelTextPostAt(channelId: string): number | null {
+    const row = this.db
+      .prepare(
+        `SELECT posted_at FROM text_posts WHERE channel_id = ? ORDER BY posted_at DESC LIMIT 1`,
+      )
+      .get(channelId) as { posted_at: number } | undefined;
+    return row?.posted_at ?? null;
   }
 
   isChannelOptedOut(guildId: string, channelId: string): boolean {
@@ -129,6 +173,8 @@ export class StateStoreService implements OnModuleInit, OnModuleDestroy {
     totalVisits: number;
     visitsLast24h: number;
     lastVisitAt: number | null;
+    totalTextPosts: number;
+    lastTextPostAt: number | null;
   } {
     const total = this.db.prepare(`SELECT COUNT(*) AS n FROM visits`).get() as {
       n: number;
@@ -137,10 +183,15 @@ export class StateStoreService implements OnModuleInit, OnModuleDestroy {
     const day = this.db
       .prepare(`SELECT COUNT(*) AS n FROM visits WHERE visited_at >= ?`)
       .get(since) as { n: number };
+    const textTotal = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM text_posts`)
+      .get() as { n: number };
     return {
       totalVisits: total.n,
       visitsLast24h: day.n,
       lastVisitAt: this.lastGlobalVisitAt(),
+      totalTextPosts: textTotal.n,
+      lastTextPostAt: this.lastGlobalTextPostAt(),
     };
   }
 }
