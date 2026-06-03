@@ -2,7 +2,7 @@
 # external prebuilt binaries. Final image is ~700MB, dominated by build tools
 # we retain to allow native rebuilds (better-sqlite3) if ever needed at runtime.
 # Multi-stage trim is a TODO if image size becomes an issue.
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 ENV NODE_ENV=production \
     WHISPER_BIN_PATH=/usr/local/bin/whisper-cli \
