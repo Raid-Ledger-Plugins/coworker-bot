@@ -90,10 +90,10 @@ export class CoworkerConfigService {
       randomClipProbability: readNum('RANDOM_CLIP_PROBABILITY', 0.3),
       textEnabled: readBool('TEXT_ENABLED', true),
       textPostProbability: readNum('TEXT_POST_PROBABILITY', 0.05),
-      // A few hours between text posts — not a week. The old 10080-min (7-day)
-      // defaults meant the bot would post once and then go silent for a week.
-      textGlobalCooldownMin: readNum('TEXT_GLOBAL_COOLDOWN_MIN', 180),
-      textChannelCooldownMin: readNum('TEXT_CHANNEL_COOLDOWN_MIN', 720),
+      // Text posts should feel as occasional as voice visits: at most a couple
+      // a day globally, once a day per channel. Mirrors the voice cooldowns.
+      textGlobalCooldownMin: readNum('TEXT_GLOBAL_COOLDOWN_MIN', 360),
+      textChannelCooldownMin: readNum('TEXT_CHANNEL_COOLDOWN_MIN', 1_440),
       textActivityWindowMin: readNum('TEXT_ACTIVITY_WINDOW_MIN', 60),
       // Quiet servers rarely see 4 messages from 2 people in an hour, which left
       // the bot permanently gated out of text. A couple of recent human
