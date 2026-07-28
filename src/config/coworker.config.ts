@@ -27,6 +27,7 @@ export interface CoworkerConfig {
   textMinMessages: number;
   textMinAuthors: number;
   textContextMessages: number;
+  textNoRepeatCount: number;
   randomLineProbability: number;
   whisperBinPath: string;
   whisperModelPath: string;
@@ -90,10 +91,11 @@ export class CoworkerConfigService {
       randomClipProbability: readNum('RANDOM_CLIP_PROBABILITY', 0.3),
       textEnabled: readBool('TEXT_ENABLED', true),
       textPostProbability: readNum('TEXT_POST_PROBABILITY', 0.05),
-      // Text posts should feel as occasional as voice visits: at most a couple
-      // a day globally, once a day per channel. Mirrors the voice cooldowns.
-      textGlobalCooldownMin: readNum('TEXT_GLOBAL_COOLDOWN_MIN', 360),
-      textChannelCooldownMin: readNum('TEXT_CHANNEL_COOLDOWN_MIN', 1_440),
+      // A text post should be a rare cameo, not a daily occurrence. The 3-day
+      // cooldowns are the real cap; the per-tick probability just adds jitter
+      // on top, so in practice he speaks up roughly twice a week at most.
+      textGlobalCooldownMin: readNum('TEXT_GLOBAL_COOLDOWN_MIN', 4_320),
+      textChannelCooldownMin: readNum('TEXT_CHANNEL_COOLDOWN_MIN', 4_320),
       textActivityWindowMin: readNum('TEXT_ACTIVITY_WINDOW_MIN', 60),
       // Quiet servers rarely see 4 messages from 2 people in an hour, which left
       // the bot permanently gated out of text. A couple of recent human
@@ -101,6 +103,9 @@ export class CoworkerConfigService {
       textMinMessages: readNum('TEXT_MIN_MESSAGES', 2),
       textMinAuthors: readNum('TEXT_MIN_AUTHORS', 1),
       textContextMessages: readNum('TEXT_CONTEXT_MESSAGES', 20),
+      // Never re-post any of the guild's last N lines. With a 500+ line pool
+      // this keeps repeats years apart instead of "8th time you have asked".
+      textNoRepeatCount: readNum('TEXT_NO_REPEAT_COUNT', 100),
       randomLineProbability: readNum('RANDOM_LINE_PROBABILITY', 0.3),
       whisperBinPath: process.env.WHISPER_BIN_PATH ?? 'whisper-cli',
       whisperModelPath: path.resolve(

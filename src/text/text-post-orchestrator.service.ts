@@ -68,7 +68,7 @@ export class TextPostOrchestratorService {
     }
 
     const category = this.decideCategory(context);
-    const line = this.pickLine(category);
+    const line = this.pickLine(category, this.recentlyPosted(channel.guild.id));
     if (!line) {
       return { ok: false, reason: 'no-line', posted: false, category };
     }
@@ -114,15 +114,29 @@ export class TextPostOrchestratorService {
     return matched;
   }
 
+  /** Lines this guild has heard recently — off-limits for the next pick. */
+  private recentlyPosted(guildId: string): ReadonlySet<string> {
+    return new Set(
+      this.state.recentTextLines(guildId, this.cfg.config.textNoRepeatCount),
+    );
+  }
+
   /**
    * Resolves a category to an actual line, falling back to `idle` and then to a
    * fully random pick — mirroring how the voice path drifts when nothing matches.
+   * Recently posted lines are excluded at every step.
    */
-  private pickLine(category: string | null): ReturnType<LineLoaderService['pickRandom']> {
+  private pickLine(
+    category: string | null,
+    exclude: ReadonlySet<string>,
+  ): ReturnType<LineLoaderService['pickRandom']> {
     if (category) {
-      const matched = this.lines.pickFromCategory(category);
+      const matched = this.lines.pickFromCategory(category, exclude);
       if (matched) return matched;
     }
-    return this.lines.pickFromCategory(IDLE_FALLBACK) ?? this.lines.pickRandom();
+    return (
+      this.lines.pickFromCategory(IDLE_FALLBACK, exclude) ??
+      this.lines.pickRandom(exclude)
+    );
   }
 }

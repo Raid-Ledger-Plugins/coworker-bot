@@ -33,8 +33,11 @@ All transcription runs **locally** — no voice data ever leaves the host.
 
 ### It does the same thing in text channels — but rarely
 
-The bot also chimes into **text** channels, much less often (capped at roughly
-**once a week** by default). On each tick it occasionally looks for a text
+The bot also chimes into **text** channels, much less often (a 3-day cooldown
+plus jitter caps it at roughly **twice a week**). It also remembers the last
+100 lines it posted in a guild and never repeats one of those, so with a
+500+ line pool the same joke won't come back around for a very long time.
+On each tick it occasionally looks for a text
 channel with **live chatter** — several recent messages from a few different
 people — reads the last handful of messages, runs them through the *same*
 keyword tree the voice path uses, and posts one short in-character line — e.g.

@@ -120,6 +120,16 @@ export class StateStoreService implements OnModuleInit, OnModuleDestroy {
     return row?.posted_at ?? null;
   }
 
+  /** The guild's most recently posted line texts, newest first. */
+  recentTextLines(guildId: string, limit: number): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT line FROM text_posts WHERE guild_id = ? ORDER BY posted_at DESC LIMIT ?`,
+      )
+      .all(guildId, limit) as { line: string }[];
+    return rows.map((r) => r.line);
+  }
+
   lastChannelTextPostAt(channelId: string): number | null {
     const row = this.db
       .prepare(
