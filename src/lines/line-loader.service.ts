@@ -77,14 +77,33 @@ export class LineLoaderService implements OnModuleInit {
     return this.lines.length;
   }
 
-  pickRandom(): Line | null {
-    if (this.lines.length === 0) return null;
-    return this.lines[Math.floor(Math.random() * this.lines.length)];
+  /**
+   * `exclude` holds recently posted texts; picks avoid them so the same joke
+   * doesn't resurface for a long while. If exclusion empties the whole pool
+   * (tiny line set, long memory) we repeat rather than fall silent.
+   */
+  pickRandom(exclude?: ReadonlySet<string>): Line | null {
+    return pickExcluding(this.lines, exclude) ?? pick(this.lines);
   }
 
-  pickFromCategory(category: string): Line | null {
+  pickFromCategory(
+    category: string,
+    exclude?: ReadonlySet<string>,
+  ): Line | null {
     const filtered = this.lines.filter((l) => l.category === category);
-    if (filtered.length === 0) return null;
-    return filtered[Math.floor(Math.random() * filtered.length)];
+    return pickExcluding(filtered, exclude);
   }
+}
+
+function pick(pool: Line[]): Line | null {
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function pickExcluding(
+  pool: Line[],
+  exclude?: ReadonlySet<string>,
+): Line | null {
+  if (!exclude || exclude.size === 0) return pick(pool);
+  return pick(pool.filter((l) => !exclude.has(l.text)));
 }
