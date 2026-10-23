@@ -10,7 +10,6 @@
     "start:dev": "tsx watch src/main.ts",
     "register-commands": "tsx src/scripts/register-commands.ts",
     "setup-whisper": "bash scripts/setup-whisper.sh",
-    "deploy:fly": "fly deploy --remote-only",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
