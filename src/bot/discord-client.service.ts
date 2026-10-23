@@ -28,6 +28,9 @@ export class DiscordClientService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Logged in as ${c.user.tag} (${c.user.id})`);
     });
     this.client.on('error', (err) => this.logger.error('client error', err));
+    this.client.on('shardError', (err, shardId) =>
+      this.logger.error(`shard ${shardId} error: ${String(err)}`),
+    );
     this.client.on('warn', (msg) => this.logger.warn(msg));
     await this.client.login(this.cfg.config.discordBotToken);
   }
