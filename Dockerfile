@@ -53,12 +53,12 @@ RUN mkdir -p models \
        https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
 
 # sqlite cooldown DB lives here — mount a volume to persist across restarts.
-# On Fly the same volume also holds /app/data/logs (set LOG_DIR in fly.toml).
+# With LOG_DIR set, the same volume also holds /app/data/logs.
 VOLUME ["/app/data"]
 
-# Optional health endpoint binds 0.0.0.0:$HEALTH_PORT (8080 on Fly). No EXPOSE /
-# published port is needed — Fly's machine check reaches it on the private
-# network; outside Fly the bot is outbound-only.
+# Optional health endpoint binds 0.0.0.0:$HEALTH_PORT. No EXPOSE / published
+# port is needed — container health checks reach it directly; otherwise the
+# bot is outbound-only.
 
 # tini as PID 1 forwards SIGTERM for a clean shutdown and reaps the ffmpeg /
 # whisper-cli subprocesses the bot spawns during voice visits.
